@@ -262,7 +262,7 @@ def run_25yr_sim_and_plot(
 # 3) MAIN STREAMLIT APP
 ###############################################################################
 def main():
-    st.title("Portfolio Simulation Application")
+    st.title("Portfolio Simulation")
 
     # Read local Excel for returns & inflation
     try:

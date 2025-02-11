@@ -262,7 +262,7 @@ def run_25yr_sim_and_plot(
 # 3) MAIN STREAMLIT APP
 ###############################################################################
 def main():
-    st.title("Single-Portfolio Simulation with Contributions")
+    st.title("Portfolio Simulation Application")
 
     # Read local Excel for returns & inflation
     try:
@@ -286,7 +286,7 @@ def main():
     # Additional user inputs
     initial_balance = st.number_input("Initial Balance", value=300000, step=10000)
     benchmark_fee = st.number_input("Benchmark Fee (annual, decimal)", value=0.01, step=0.001, format="%.4f")
-    active_fee = st.number_input("Active (Momentum) Fee (annual, decimal)", value=0.0125, step=0.001, format="%.4f")
+    active_fee = st.number_input("Active Fee (annual, decimal)", value=0.0125, step=0.001, format="%.4f")
     starting_age = st.number_input("Starting Age", value=56, step=1)
     n_sims = st.number_input("Number of Simulations", value=1000, step=500)
 

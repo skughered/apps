@@ -186,11 +186,10 @@ def run_25yr_sim_and_plot(
     port_returns = rets_df[portfolio_name].dropna()
     shock_pool = get_worst_decile_pool(port_returns, 0.1)
 
-    # ---------------------- NEW PART: EXTEND HORIZON FOR MOMENTUM ----------------------
-    # We add 'momentum_window' extra months so the momentum filter has warm-up data.
+    # (1) Extended horizon to handle the warm-up for momentum
     extended_horizon_months = horizon_months + momentum_window
 
-    # Generate monthly returns with shocks for the extended horizon
+    # (2) Generate monthly returns with shocks for the extended horizon
     all_sim_monthly_returns_extended = stationary_bootstrap_with_shocks(
         returns=port_returns,
         horizon=extended_horizon_months,
@@ -210,57 +209,75 @@ def run_25yr_sim_and_plot(
         st.error("No positive inflation data after filter.")
         return
 
-    # Random draws of inflation for the extended horizon
+    # (3) Random draws of inflation for the extended horizon
     inflation_draws_extended = np.random.choice(inflation_array, size=(n_sims, extended_horizon_months))
 
-    # -------------------- COMPUTE BALANCE PATHS (EXTENDED) --------------------
-    # 1) Baseline (no momentum, benchmark fee)
-    baseline_balance_paths_extended = compute_balance_paths(
-        all_sim_monthly_returns_extended,
-        inflation_draws_extended,
-        withdrawal_schedule,
-        contribution_schedule,
+    # ------------------------------------------------------------------------
+    # (4) Apply the momentum filter "externally" so that we can discard warm-up
+    # ------------------------------------------------------------------------
+    # 4a) Build a "momentum-filtered" copy
+    momentum_filtered_returns_extended = np.zeros_like(all_sim_monthly_returns_extended)
+    for i in range(n_sims):
+        momentum_filtered_returns_extended[i, :] = apply_momentum_filter(
+            all_sim_monthly_returns_extended[i, :], window=momentum_window
+        )
+
+    # 4b) Slice off the first 'momentum_window' months for both baseline & momentum
+    #     => This ensures their official "Month 0" starts at the same time,
+    #        so both are at the same initial balance in the first reported month.
+    baseline_returns = all_sim_monthly_returns_extended[:, momentum_window:]
+    momentum_returns = momentum_filtered_returns_extended[:, momentum_window:]
+    inflation_draws = inflation_draws_extended[:, momentum_window:]
+
+    # ------------------------------------------------------------------------
+    # (5) Now pass only the final horizon_months to compute_balance_paths
+    #     - Importantly, we set apply_momentum=False in BOTH calls, because
+    #       we already applied the momentum filter above.
+    # ------------------------------------------------------------------------
+    baseline_balance_paths = compute_balance_paths(
+        all_monthly_returns=baseline_returns,
+        inflation_draws=inflation_draws,
+        withdrawal_schedule=withdrawal_schedule,
+        contribution_schedule=contribution_schedule,
         initial_balance=initial_balance,
         ifa_fee_annual=ifa_fee_benchmark,
-        apply_momentum=False,
+        apply_momentum=False,       # Already handled "no momentum" scenario
         momentum_window=momentum_window
     )
 
-    # 2) Momentum (active fee)
-    momentum_balance_paths_extended = compute_balance_paths(
-        all_sim_monthly_returns_extended,
-        inflation_draws_extended,
-        withdrawal_schedule,
-        contribution_schedule,
+    momentum_balance_paths = compute_balance_paths(
+        all_monthly_returns=momentum_returns,
+        inflation_draws=inflation_draws,
+        withdrawal_schedule=withdrawal_schedule,
+        contribution_schedule=contribution_schedule,
         initial_balance=initial_balance,
         ifa_fee_annual=ifa_fee_momentum,
-        apply_momentum=True,
+        apply_momentum=False,       # We already did the momentum filter externally
         momentum_window=momentum_window
     )
 
-    # -------------------- SLICE OFF THE "WARM-UP" MONTHS --------------------
-    baseline_balance_paths = baseline_balance_paths_extended[:, momentum_window:]
-    momentum_balance_paths = momentum_balance_paths_extended[:, momentum_window:]
-
-    # Now both have shape (n_sims, horizon_months) instead of (n_sims, extended_horizon_months)
-
-    # -------------------- BUILD AGE AXIS, COMPUTE QUANTILES, PLOT --------------------
+    # Build age axis
     time_axis = np.arange(horizon_months)
     age_axis = starting_age + time_axis / 12.0
 
+    # Quantiles
     baseline_quantiles = {}
     momentum_quantiles = {}
     for q in quantiles_to_plot:
         baseline_quantiles[q] = np.percentile(baseline_balance_paths, q, axis=0)
         momentum_quantiles[q] = np.percentile(momentum_balance_paths, q, axis=0)
 
+    # Plot
     fig, ax = plt.subplots(figsize=(10, 6))
     for q in quantiles_to_plot:
         ax.plot(age_axis, baseline_quantiles[q], label=f'Benchmark {q}th %ile', lw=2)
     for q in quantiles_to_plot:
         ax.plot(age_axis, momentum_quantiles[q], label=f'Active {q}th %ile', lw=2, ls='--')
 
-    ax.set_title(f"Portfolio: {portfolio_name}\nFrom Age {starting_age} to {starting_age + horizon_years} (n={n_sims} sims)")
+    ax.set_title(
+        f"Portfolio: {portfolio_name}\n"
+        f"From Age {starting_age} to {starting_age + horizon_years} (n={n_sims} sims)"
+    )
     ax.set_xlabel("Age")
     ax.set_ylabel("Portfolio Balance")
     ax.grid(True)
@@ -268,6 +285,7 @@ def run_25yr_sim_and_plot(
     ax.legend()
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, pos: f"{x/1000:.0f}k"))
     st.pyplot(fig)
+
 
 
 ###############################################################################

@@ -333,7 +333,7 @@ def main():
             bootstrap_prob=1.0/3,
             max_shock_events=3,
             max_event_length=12,
-            bias_toward_start=False,
+            bias_toward_start=True,
             momentum_window=10,
             ifa_fee_benchmark=benchmark_fee,
             ifa_fee_momentum=active_fee,
